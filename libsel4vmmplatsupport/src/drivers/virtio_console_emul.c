@@ -86,7 +86,7 @@ static void emul_con_rx_complete(virtio_emul_t *emul, int queue, char *buf, unsi
 
 /**
  * Write to guest console attached to a port.
- * 
+ *
  * The relationship between virtqueues and port numbers is as follows:
  * (0, 1): Port 0 RX and TX, respectively
  * (2, 3): Control messages RX and TX, used for setting up virtiocon
