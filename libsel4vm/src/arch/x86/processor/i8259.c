@@ -28,8 +28,6 @@
 #define I8259_MASTER   0
 #define I8259_SLAVE    1
 
-#define PIC_NUM_PINS 16
-
 /*first programmable interrupt controller, master*/
 #define X86_IO_PIC_1_START   0x20
 #define X86_IO_PIC_1_END     0x21
@@ -47,7 +45,7 @@ typedef struct i8259_irq_ack {
     void *cookie;
 } i8259_irq_ack_t;
 
-static i8259_irq_ack_t irq_ack_fns[PIC_NUM_PINS];
+static i8259_irq_ack_t irq_ack_fns[I8259_NR_IRQS];
 
 /* PIC Machine state. */
 struct i8259_state {
@@ -277,7 +275,7 @@ static void pic_reset(vm_t *vm, struct i8259_state *s)
     }
 #endif
 
-    for (irq = 0; irq < PIC_NUM_PINS / 2; irq++) {
+    for (irq = 0; irq < I8259_NR_IRQS / 2; irq++) {
         if (edge_irr & (1 << irq)) {
             pic_clear_isr(vm, s, irq);
         }
@@ -368,7 +366,7 @@ static void pic_ioport_write(vm_vcpu_t *vcpu, struct i8259_state *s, unsigned in
             //off = (s == &s->pics_state->pics[0]) ? 0 : 8;
             s->imr = val;
 #if 0
-            for (irq = 0; irq < PIC_NUM_PINS / 2; irq++)
+            for (irq = 0; irq < I8259_NR_IRQS / 2; irq++)
                 if (imr_diff & (1 << irq))
                     /*FIXME: notify the status changes for IMR*/
                     kvm_fire_mask_notifiers(
@@ -714,7 +712,7 @@ int vm_set_irq_level(vm_vcpu_t *vcpu, int irq, int irq_level)
     return 0;
 }
 
-int vm_inject_irq(vm_vcpu_t *vcpu, int irq)
+int i8259_inject_irq(vm_vcpu_t *vcpu, int irq)
 {
     vm_set_irq_level(vcpu, irq, 1);
     vm_set_irq_level(vcpu, irq, 0);
@@ -723,7 +721,7 @@ int vm_inject_irq(vm_vcpu_t *vcpu, int irq)
 
 int vm_register_irq(vm_vcpu_t *vcpu, int irq, irq_ack_fn_t fn, void *cookie)
 {
-    if (irq < 0 || irq >= PIC_NUM_PINS) {
+    if (irq < 0 || irq >= I8259_NR_IRQS) {
         ZF_LOGE("irq %d is invalid", irq);
         return -1;
     }

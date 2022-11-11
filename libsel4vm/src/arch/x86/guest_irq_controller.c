@@ -7,7 +7,7 @@
 #include <sel4vm/guest_vm.h>
 #include <sel4vm/guest_memory.h>
 
-#include "i8259/i8259.h"
+#include "processor/i8259.h"
 #include "processor/apicdef.h"
 #include "processor/lapic.h"
 
@@ -32,6 +32,15 @@ int vm_create_default_irq_controller(vm_t *vm)
         ZF_LOGE("Failed to reserve apic memory");
         return -1;
     }
+
+    /* Add ioapic memory handler */
+    /** @andyb: honestly dont know how big the ioapic ram area is supposed to be, 1 page looks ok */
+    // vm_memory_reservation_t *ioapic_reservation = vm_reserve_memory_at(vm, IOAPIC_DEFAULT_PHYS_BASE,
+    //                                                                  0x1000, apic_fault_callback, NULL);
+    // if (!ioapic_reservation) {
+    //     ZF_LOGE("Failed to reserve apic memory");
+    //     return -1;
+    // }
 
     return 0;
 }

@@ -29,6 +29,15 @@ typedef void (*irq_ack_fn_t)(vm_vcpu_t *vcpu, int irq, void *cookie);
 int vm_inject_irq(vm_vcpu_t *vcpu, int irq);
 
 /***
+ * @function vm_timer_inject_irq(vcpu)
+ * Inject an a timer IRQ. This is for when the IRQ controller handles the nitty-gritty
+ * IRQ assignments, and we have no way of telling where the timer IRQ is supposed to go.
+ * @param {vm_vcpu_t *} vcpu    Handle to the VCPU
+ * @return                      0 on success, otherwise -1 for error
+ */
+int vm_inject_timer_irq(vm_vcpu_t *vcpu);
+
+/***
  * @function vm_set_irq_level(vcpu, irq, irq_level)
  * Set level of IRQ number into a VM's interrupt controller
  * @param {vm_vcpu_t} vcpu      Handle to the VCPU

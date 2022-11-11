@@ -17,8 +17,8 @@
 #include <sel4vm/arch/vmexit_reasons.h>
 #include <sel4vm/arch/ioports.h>
 
-#define IO_APIC_DEFAULT_PHYS_BASE   0xfec00000
 #define APIC_DEFAULT_PHYS_BASE      0xfee00000
+#define IOAPIC_DEFAULT_PHYS_BASE    0xfec00000
 
 typedef struct vm_lapic vm_lapic_t;
 typedef struct i8259 i8259_t;

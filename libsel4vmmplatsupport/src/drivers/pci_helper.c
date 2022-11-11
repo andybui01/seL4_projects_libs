@@ -16,6 +16,39 @@
 
 #define PCI_CAPABILITY_SPACE_OFFSET 0x40
 
+typedef struct x86_msi_data {
+    union {
+        struct {
+            uint32_t vector		        :8,
+                     delivery_mode		:3,
+                     dest_mode_logical	:1,
+                     reserved		    :2,
+                     active_low		    :1,
+                     is_level		    :1;
+        };
+        uint32_t value;
+    };
+} __attribute__((packed)) x86_msi_data_t;
+
+typedef struct x86_msi_addr_lo {
+    union {
+        struct {
+            uint32_t reserved_0		    :2,
+                     dest_mode_logical	:1,
+                     redirect_hint		:1,
+                     reserved_1		    :1,
+                     virt_destid_8_14	:7,
+                     destid_0_7		    :8,
+                     base_address		:12; /* Always 0xFEE */
+        };
+        uint32_t value;
+    };
+} __attribute__((packed)) x86_msi_addr_lo_t;
+
+void *pt_cookie;
+uint32_t msi_off;
+uint32_t msix_off;
+
 /* Read PCI memory device */
 int vmm_pci_mem_device_read(void *cookie, int offset, int size, uint32_t *result)
 {
@@ -24,7 +57,7 @@ int vmm_pci_mem_device_read(void *cookie, int offset, int size, uint32_t *result
         return -1;
     }
     if (offset + size > PCI_CAPABILITY_SPACE_OFFSET) {
-        ZF_LOGI("Indexing capability space not yet supported, returning 0");
+        ZF_LOGE("Indexing capability space not yet supported, returning 0");
         *result = 0;
         return 0;
     }
@@ -43,7 +76,7 @@ int vmm_pci_mem_device_write(void *cookie, int offset, int size, uint32_t value)
         return -1;
     }
     if (offset + size > PCI_CAPABILITY_SPACE_OFFSET) {
-        ZF_LOGI("Indexing capability space not yet supported, returning 0");
+        ZF_LOGE("Indexing capability space not yet supported, returning 0");
         return 0;
     }
 
@@ -185,7 +218,7 @@ static int pci_irq_emul_read(void *cookie, int offset, int size, uint32_t *resul
         return emul->passthrough.ioread(emul->passthrough.cookie, offset, size, result);
     }
 }
-
+/** @andyb: this calls the actual iowrite function which writes to the cap */
 static int pci_irq_emul_write(void *cookie, int offset, int size, uint32_t value)
 {
     pci_irq_emulation_t *emul = (pci_irq_emulation_t *)cookie;
@@ -325,8 +358,34 @@ static int pci_cap_emul_read(void *cookie, int offset, int size, uint32_t *resul
     return emul->passthrough.ioread(emul->passthrough.cookie, offset, size, result);
 }
 
+static int msi_cap_emul_write(void *cookie, int offset, int size, uint32_t value)
+{
+    pci_cap_emulation_t *emul = (pci_cap_emulation_t *)cookie;
+
+    uint32_t temp;
+    emul->passthrough.ioread(emul->passthrough.cookie, msi_off, 4, &temp);
+
+    printf("MSI(%d) at off %x: Writing value 0x%x sized %d bytes to cap offset 0x%x\n", (temp&BIT(16))>>16, offset, value, size, offset - msi_off);
+    if (offset - msi_off == 0xC) {
+        printf("\tVector %d, Delivery Mode 0x%x, Trigger Mode %d\n", value & 0xff, (value >> 8) & 0b111, (value >> 15) & 1);
+        x86_msi_data_t *data = &value;
+        if (data->vector == 32) {
+            data->vector = 16 + 48;
+            printf("\tVector %d, Delivery Mode 0x%x, Trigger Mode %d\n", value & 0xff, (value >> 8) & 0b111, (value >> 15) & 1);
+        }
+    } else if (offset - msi_off == 0x4) {
+        x86_msi_addr_lo_t *addr = &value;
+        printf("\tDest 0x%x, RH 0x%x, DM 0x%x\n", addr->destid_0_7, addr->redirect_hint, addr->dest_mode_logical);
+        addr->value = 0xfee00000;
+    }
+    
+    /** @andyb: call irq emulation */
+    return emul->passthrough.iowrite(emul->passthrough.cookie, offset, size, value);
+}
+
 static int pci_cap_emul_write(void *cookie, int offset, int size, uint32_t value)
 {
+    assert(offset != msi_off);
     pci_cap_emulation_t *emul = (pci_cap_emulation_t *)cookie;
     /* Prevents writes to our ignored ranges. but let anything else through */
     int i;
@@ -338,7 +397,12 @@ static int pci_cap_emul_write(void *cookie, int offset, int size, uint32_t value
             return 0;
         }
     }
-    return emul->passthrough.iowrite(emul->passthrough.cookie, offset, size, value);
+
+    if (emul->passthrough.cookie == pt_cookie && offset >= msi_off && offset < msi_off + 0x18) {
+        msi_cap_emul_write(cookie, offset, size, value);
+    } else {
+        return emul->passthrough.iowrite(emul->passthrough.cookie, offset, size, value);
+    }
 }
 
 vmm_pci_entry_t vmm_pci_create_cap_emulation(vmm_pci_entry_t existing, int num_caps, uint8_t *caps, int num_ranges,
@@ -365,8 +429,11 @@ vmm_pci_entry_t vmm_pci_create_cap_emulation(vmm_pci_entry_t existing, int num_c
 
 #define MAX_CAPS 256
 
-vmm_pci_entry_t vmm_pci_no_msi_cap_emulation(vmm_pci_entry_t existing)
+vmm_pci_entry_t vmm_pci_cap_emulation(vmm_pci_entry_t existing, bool enable_msi)
 {
+    if (enable_msi) {
+        pt_cookie = existing.cookie;
+    }
     uint32_t value;
     int UNUSED error;
     /* Ensure this is a type 0 device */
@@ -398,11 +465,29 @@ vmm_pci_entry_t vmm_pci_no_msi_cap_emulation(vmm_pci_entry_t existing)
         error = existing.ioread(existing.cookie, value, 1, &cap_type);
         assert(!error);
         if (cap_type == PCI_CAP_ID_MSI) {
-            assert(num_ignore < 2);
-            ignore_start[num_ignore] = value;
-            ignore_end[num_ignore] = value + 20;
-            num_ignore++;
+            if (enable_msi) {
+                msi_off = value;
+                assert(num_caps < MAX_CAPS);
+                caps[num_caps] = (uint8_t)value;
+                num_caps++;
+
+                /* Enable MSI */
+                uint32_t temp;
+                error = existing.ioread(existing.cookie, value, 4, &temp);
+                printf("MSI off: %x", msi_off);
+                printf("64-bit: %d\n", (temp&BIT(23))>>23);
+                printf("%d messages supported\n", 1<<((temp >> 17)&0b111));
+                printf("MSI %d\n", (temp&BIT(16)>>16));
+                // error = existing.iowrite(existing.cookie, value, 4, temp | BIT(16));
+            } else {
+                assert(num_ignore < 2);
+                ignore_start[num_ignore] = value;
+                ignore_end[num_ignore] = value + 20;
+                num_ignore++;
+            }
         } else if (cap_type == PCI_CAP_ID_MSIX) {
+            /** @andyb: If MSI works, try make MSIX work... */
+            assert(num_ignore < 2);
             ignore_start[num_ignore] = value;
             ignore_end[num_ignore] = value + 8;
             num_ignore++;
@@ -414,9 +499,27 @@ vmm_pci_entry_t vmm_pci_no_msi_cap_emulation(vmm_pci_entry_t existing)
         error = existing.ioread(existing.cookie, value + 1, 1, &value);
         assert(!error);
     }
+
     if (num_ignore > 0) {
         return vmm_pci_create_cap_emulation(existing, num_caps, caps, num_ignore, ignore_start, ignore_end);
     } else {
         return existing;
     }
 }
+
+/**
+ * @andyb: This is where we do the MSI cap setup. See for examples:
+ * https://wiki.osdev.org/PCI
+ * https://github.com/doug65536/dgos/blob/master/kernel/device/pci.cc (pci_set_msi_irq)
+ * https://github.com/doug65536/dgos/blob/master/kernel/arch/x86_64/cpu/apic.cc (apic_msi_irq_alloc)
+ * 
+ * https://github.com/ChaiSoft/ChaiOS/blob/master/Chaikrnl/pciexpress.cpp (PciAllocateMsi)
+ * 
+ * 
+ * order of PCI operations
+ * cap rw -> irq rw -> passthrough rw -> pci server or some stupid shit
+ * 
+ * 
+ * notes:
+ * guest is supposed to write 0x180 to offset 0x52 with size 2
+ */

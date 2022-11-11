@@ -263,4 +263,4 @@ vmm_pci_entry_t vmm_pci_create_cap_emulation(vmm_pci_entry_t existing, int num_c
  * @param {vmm_pci_entry_t} existing    Existing PCI entry to wrap over with ignored MSI capabilities
  * @return                              `vmm_pci_entry_t` with an emulated capability space (ignoring MSI capabilties)
  */
-vmm_pci_entry_t vmm_pci_no_msi_cap_emulation(vmm_pci_entry_t existing);
+vmm_pci_entry_t vmm_pci_cap_emulation(vmm_pci_entry_t existing, bool enable_msi);

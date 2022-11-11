@@ -15,7 +15,7 @@
 #include <sel4vm/boot.h>
 
 #include "vm.h"
-#include "i8259/i8259.h"
+#include "processor/i8259.h"
 #include "guest_state.h"
 #include "processor/decode.h"
 #include "processor/lapic.h"
@@ -159,6 +159,12 @@ void vm_check_external_interrupt(vm_t *vm)
             vm_vcpu_accept_interrupt(vcpu);
         }
     }
+    // } else if (vm_apic_has_interrupt(vm)) {
+    // // if (vm_apic_has_interrupt(vm)) {
+    //     vm_vcpu_t *vcpu = vm->vcpus[BOOT_VCPU];
+    //     vm_vcpu_accept_interrupt(vcpu);
+    // }
+
 }
 
 void vm_vcpu_accept_interrupt(vm_vcpu_t *vcpu)

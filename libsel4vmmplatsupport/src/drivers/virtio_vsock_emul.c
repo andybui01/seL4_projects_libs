@@ -8,7 +8,7 @@
 #include "virtio_emul_helpers.h"
 
 /* Temporary buffer used during TX */
-char buf[VIRTIO_VSOCK_CAMKES_MTU];
+char tx_buf[VIRTIO_VSOCK_CAMKES_MTU];
 
 typedef struct vsock_internal {
     struct vsock_passthrough driver;
@@ -114,13 +114,13 @@ static void emul_vsock_notify_tx(virtio_emul_t *emul)
 
             /* truncate packets that are too large */
             uint32_t this_len = MIN(VIRTIO_VSOCK_CAMKES_MTU - len, desc.len);
-            vm_guest_read_mem(emul->vm, buf + len, (uintptr_t)desc.addr, this_len);
+            vm_guest_read_mem(emul->vm, tx_buf + len, (uintptr_t)desc.addr, this_len);
             len += this_len;
             desc_idx = desc.next;
         } while (desc.flags & VRING_DESC_F_NEXT && len < VIRTIO_VSOCK_CAMKES_MTU);
 
         /* Handle the packet */
-        vsock_handle_packet(emul, buf, len);
+        vsock_handle_packet(emul, tx_buf, len);
 
         /* next */
         idx++;
